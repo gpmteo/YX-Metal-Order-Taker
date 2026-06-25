@@ -70,8 +70,23 @@ main{flex:1;max-width:560px;width:100%;margin:0 auto;padding:14px 13px 100px;dis
 .scan-frame{width:65%;aspect-ratio:3/1;border:2.5px solid var(--gold);border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);position:relative;}
 .scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);animation:scanline 1.8s ease-in-out infinite;}
 @keyframes scanline{0%{top:8%;opacity:1}50%{top:88%;opacity:.7}100%{top:8%;opacity:1}}
-.scan-hint{position:absolute;bottom:10px;left:0;right:0;text-align:center;color:rgba(255,255,255,.8);font-size:12px;font-weight:500;}
-#close-scan{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);border:none;color:white;width:30px;height:30px;border-radius:50%;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;pointer-events:all;line-height:1;}
+.scan-hint{text-align:center;color:var(--ink-soft);font-size:12px;font-weight:500;padding:4px 0;}
+#qr-reader { border: none !important; }
+#qr-reader video { border-radius: var(--r-md) !important; }
+#qr-reader img { display: none !important; }
+#qr-reader__scan_region { border-radius: var(--r-md); overflow: hidden; }
+#qr-reader__dashboard { padding: 8px 0 0 !important; background: transparent !important; border: none !important; }
+#qr-reader__dashboard_section_csr button { 
+  background: var(--teal) !important; color: white !important; 
+  border: none !important; border-radius: var(--r-sm) !important;
+  padding: 8px 16px !important; font-weight: 600 !important; font-size: 13px !important;
+}
+#qr-reader__status_span { font-size: 12px !important; color: var(--ink-soft) !important; }
+#qr-reader__camera_selection { 
+  width: 100% !important; padding: 8px !important; border-radius: var(--r-sm) !important;
+  border: 1.5px solid var(--border) !important; font-size: 13px !important;
+  background: var(--surface) !important; margin-bottom: 6px !important;
+}
 
 /* PILLS */
 #lookup-pill{display:none;align-items:center;gap:8px;background:var(--gold-light);border:1.5px solid #f0d080;border-radius:var(--r-sm);padding:8px 12px;}
@@ -210,11 +225,8 @@ main{flex:1;max-width:560px;width:100%;margin:0 auto;padding:14px 13px 100px;dis
     <div class="header-title"><strong>YX Precious Metal</strong>Order Taker</div>
   </div>
   <div class="header-right">
-    <div id="sync-indicator" style="display:flex;align-items:center;gap:5px;margin-right:4px;">
-      <div id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:var(--ink-soft);flex-shrink:0;transition:background .3s;"></div>
-      <span id="sync-label" style="font-size:10px;color:rgba(255,255,255,.55);font-weight:500;white-space:nowrap;">Not synced</span>
-    </div>
-    <div class="header-badge" id="session-badge">New session</div>
+    <div id="sync-dot" title="Catalogue sync status" style="width:8px;height:8px;border-radius:50%;background:var(--ink-soft);flex-shrink:0;transition:background .4s;margin-right:2px;"></div>
+    <div class="header-badge" id="session-badge" style="display:none;"></div>
     <button class="admin-btn" id="admin-toggle-btn" onclick="handleAdminBtn()">🔒 Admin</button>
   </div>
 </header>
@@ -249,10 +261,11 @@ main{flex:1;max-width:560px;width:100%;margin:0 auto;padding:14px 13px 100px;dis
     <div class="card-body">
       <div class="scan-area">
         <div id="video-container">
-          <video id="preview" playsinline autoplay muted></video>
-          <div class="scan-overlay"><div class="scan-frame"><div class="scan-line"></div></div></div>
-          <div class="scan-hint">Align barcode within the frame</div>
-          <button id="close-scan" onclick="stopScan()" aria-label="Close">✕</button>
+          <div id="qr-reader" style="width:100%;border-radius:var(--r-md);overflow:hidden;"></div>
+          <div id="scan-overlay-custom" style="display:none;position:relative;">
+            <div class="scan-hint" style="position:static;text-align:center;padding:6px 0;font-size:12px;color:var(--ink-soft);">Align barcode within the frame</div>
+          </div>
+          <button id="close-scan" onclick="stopScan()" aria-label="Close" style="display:none;width:100%;margin-top:8px;" class="btn btn-outline">✕ Close camera</button>
         </div>
 
         <div class="scan-row">
@@ -368,23 +381,18 @@ main{flex:1;max-width:560px;width:100%;margin:0 auto;padding:14px 13px 100px;dis
       <div><h2>Google Sheets sync</h2><p>Live catalogue from your spreadsheet</p></div>
     </div>
     <div class="card-body" style="display:flex;flex-direction:column;gap:10px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-radius:var(--r-sm);padding:10px 13px;border:1.5px solid var(--border);">
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--ink-mid);">Status</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
-            <div id="sync-dot-admin" style="width:8px;height:8px;border-radius:50%;background:var(--ink-soft);transition:background .3s;"></div>
-            <span id="sync-label-admin" style="font-size:13px;color:var(--ink);font-weight:500;">Checking…</span>
-          </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-radius:var(--r-sm);padding:11px 13px;border:1.5px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div id="sync-dot-admin" style="width:10px;height:10px;border-radius:50%;background:var(--ink-soft);flex-shrink:0;transition:background .4s;"></div>
+          <span id="sync-label-admin" style="font-size:13px;color:var(--ink);font-weight:500;">—</span>
         </div>
         <button class="btn btn-outline btn-sm" onclick="syncNow()">↻ Sync now</button>
       </div>
       <div style="background:var(--teal-light);border-radius:var(--r-sm);padding:10px 13px;">
-        <div style="font-size:12px;font-weight:600;color:var(--teal-dark);margin-bottom:3px;">Connected sheet</div>
+        <div style="font-size:11px;font-weight:600;color:var(--teal-dark);margin-bottom:2px;">Connected sheet ID</div>
         <div style="font-size:11px;color:var(--ink-mid);font-family:monospace;word-break:break-all;" id="sheet-id-display"></div>
       </div>
-      <div style="font-size:12px;color:var(--ink-soft);line-height:1.6;">
-        ℹ️ Changes you make in the Products tab are saved <strong>locally on this device</strong>. To sync updates to all devices, edit your Google Sheet directly — then tap <strong>Sync now</strong> on any device.
-      </div>
+      <div style="font-size:12px;color:var(--ink-soft);line-height:1.6;">ℹ️ Edit your Google Sheet to update the catalogue across all devices, then tap <strong>Sync now</strong>.</div>
     </div>
   </div>
 
@@ -553,7 +561,7 @@ main{flex:1;max-width:560px;width:100%;margin:0 auto;padding:14px 13px 100px;dis
 <div id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.21.3/umd/index.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ── CONFIG — update these two values if you change your Google Sheet ──
 const CONFIG = {
@@ -578,7 +586,7 @@ let importBuffer = [];
 let syncStatus = 'idle'; // idle | loading | ok | error
 
 // ── GOOGLE SHEETS SYNC ──
-async function fetchProductsFromSheet() {
+async function fetchProductsFromSheet(silent) {
   setSyncStatus('loading');
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodeURIComponent(CONFIG.SHEET_TAB)}?key=${CONFIG.API_KEY}`;
   try {
@@ -586,13 +594,12 @@ async function fetchProductsFromSheet() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const rows = data.values || [];
-    if (rows.length < 2) { setSyncStatus('ok'); return; }
-    // Find column indices from header row (case-insensitive)
+    if (rows.length < 2) { setSyncStatus('ok', 'Synced (empty)'); return; }
     const header = rows[0].map(h => String(h).toLowerCase().trim());
-    const ci = header.findIndex(h => h.includes('item code') || h === 'code');
-    const ni = header.findIndex(h => h.includes('product name') || h === 'name');
+    const ci   = header.findIndex(h => h.includes('item code') || h === 'code');
+    const ni   = header.findIndex(h => h.includes('product name') || h === 'name');
     const cati = header.findIndex(h => h.includes('category'));
-    if (ci < 0 || ni < 0) { setSyncStatus('error', 'Sheet headers not found'); return; }
+    if (ci < 0 || ni < 0) { setSyncStatus('error', 'Headers not found in sheet'); return; }
     const fetched = [];
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
@@ -602,37 +609,34 @@ async function fetchProductsFromSheet() {
       if (code && name) fetched.push({ code, name, category: cat });
     }
     products = fetched;
-    // Cache locally so app works offline after first load
     try { localStorage.setItem(CACHE_KEY, JSON.stringify(products)); } catch(e) {}
-    setSyncStatus('ok');
-    renderProducts();
-    showToast(`✅ Catalogue synced — ${products.length} products`);
+    setSyncStatus('ok', `Synced — ${products.length} products`);
+    if (isAdmin) renderProducts();
+    if (!silent) showToast(`✅ Synced — ${products.length} products`);
   } catch(err) {
-    // Fall back to local cache if offline
     try {
       const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) { products = JSON.parse(cached); setSyncStatus('error', 'Offline — using cached data'); }
-      else { setSyncStatus('error', 'No connection & no cache'); }
-    } catch(e) { setSyncStatus('error', 'Sync failed'); }
+      if (cached) { products = JSON.parse(cached); }
+    } catch(e) {}
+    setSyncStatus('error', err.message.includes('403') ? 'Sheet not public — check sharing' : 'Cannot reach sheet');
   }
 }
 
 function setSyncStatus(status, msg) {
   syncStatus = status;
-  const states = {
-    loading: { color:'var(--gold)',     text:'Syncing…' },
-    ok:      { color:'#22c55e',         text:'Synced' },
-    error:   { color:'var(--danger)',   text: msg || 'Sync error' },
-    idle:    { color:'var(--ink-soft)', text:'Not synced' },
-  };
-  const s = states[status] || states.idle;
-  ['sync-dot','sync-dot-admin'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.background=s.color;});
-  ['sync-label','sync-label-admin'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=s.text;});
+  const colors = { loading:'var(--gold)', ok:'#22c55e', error:'var(--danger)', idle:'var(--ink-soft)' };
+  const col = colors[status] || colors.idle;
+  // Header dot — always visible, no text
+  const hd = document.getElementById('sync-dot');
+  if (hd) hd.style.background = col;
+  // Admin panel dot + label — only meaningful when admin is open
+  const ad = document.getElementById('sync-dot-admin');
+  const al = document.getElementById('sync-label-admin');
+  if (ad) ad.style.background = col;
+  if (al) al.textContent = msg || status;
 }
 
-// ── LOCAL PRODUCTS (admin edits — pushed to sheet manually) ──
 function saveProducts() {
-  // Admin edits save to local cache; to persist across devices, export CSV and update your Google Sheet
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(products)); } catch(e) {}
 }
 function getPin() {
@@ -661,7 +665,6 @@ function lockAdmin() {
   document.getElementById('admin-toggle-btn').classList.remove('unlocked');
   document.getElementById('tab-products').style.display = 'none';
   switchTab('order', document.querySelector('.tab'));
-  showToast('Admin session ended');
 }
 function pinPress(d) {
   if (pinBuffer.length >= 4) return;
@@ -675,7 +678,6 @@ function pinPress(d) {
         document.getElementById('admin-toggle-btn').textContent = '🔓 Admin';
         document.getElementById('admin-toggle-btn').classList.add('unlocked');
         document.getElementById('tab-products').style.display = '';
-        showToast('✅ Admin access granted');
       } else {
         document.getElementById('pin-error').textContent = 'Incorrect PIN. Try again.';
         pinBuffer = '';
@@ -700,35 +702,12 @@ shakeStyle.textContent = '@keyframes shake{0%,100%{transform:translateX(0)}20%,6
 document.head.appendChild(shakeStyle);
 
 function syncNow() {
-  fetchProductsFromSheet();
-  // Mirror status to admin panel dots
-  const adminDot = document.getElementById('sync-dot-admin');
-  const adminLbl = document.getElementById('sync-label-admin');
-  const headerDot = document.getElementById('sync-dot');
-  const headerLbl = document.getElementById('sync-label');
-  function mirror() {
-    if (adminDot && headerDot) {
-      adminDot.style.background = headerDot.style.background;
-      adminLbl.textContent = headerLbl.textContent;
-    }
-    if (syncStatus === 'loading') setTimeout(mirror, 300);
-  }
-  setTimeout(mirror, 300);
+  fetchProductsFromSheet(false);
 }
 
-// Show sheet ID in admin panel
 function showSheetInfo() {
   const el = document.getElementById('sheet-id-display');
-  if (el) el.textContent = 'ID: ' + CONFIG.SHEET_ID + '  |  Tab: ' + CONFIG.SHEET_TAB;
-  // Sync admin dot with header dot
-  const adminDot = document.getElementById('sync-dot-admin');
-  const adminLbl = document.getElementById('sync-label-admin');
-  const headerDot = document.getElementById('sync-dot');
-  const headerLbl = document.getElementById('sync-label');
-  if (adminDot && headerDot) {
-    adminDot.style.background = headerDot.style.background;
-    adminLbl.textContent = headerLbl.textContent;
-  }
+  if (el) el.textContent = CONFIG.SHEET_ID + ' / ' + CONFIG.SHEET_TAB;
 }
 
 function changePIN() {
@@ -748,7 +727,7 @@ function switchTab(tab, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('page-' + tab).classList.add('active');
   if (el) el.classList.add('active');
-  if (tab === 'products') { renderProducts(); showSheetInfo(); }
+  if (tab === 'products' && isAdmin) { renderProducts(); showSheetInfo(); }
 }
 
 // ── LOOKUP ──
@@ -772,38 +751,68 @@ function onCodeInput() {
 // ── SCAN ──
 async function startScan() {
   document.getElementById('video-container').classList.add('active');
+  document.getElementById('close-scan').style.display = '';
   document.getElementById('scan-btn').disabled = true;
+
   try {
-    const ZXing = window.ZXing || window.zxing;
-    const hints = new Map();
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
-      ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.QR_CODE,ZXing.BarcodeFormat.DATA_MATRIX,
-    ]);
-    codeReader = new ZXing.BrowserMultiFormatReader(hints);
-    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-    const back = devices.find(d=>/back|rear|environment/i.test(d.label)) || devices[devices.length-1];
-    codeReader.decodeFromVideoDevice(back?.deviceId,'preview',(result,err)=>{
-      if (result) {
-        const code = result.getText();
-        document.getElementById('item-code').value = code;
-        document.getElementById('pill-text').textContent = code;
+    codeReader = new Html5Qrcode('qr-reader');
+    const cameras = await Html5Qrcode.getCameras();
+    if (!cameras || cameras.length === 0) {
+      throw new Error('No cameras found');
+    }
+    // Prefer back camera
+    const back = cameras.find(c => /back|rear|environment/i.test(c.label)) || cameras[cameras.length - 1];
+
+    await codeReader.start(
+      { deviceId: { exact: back.id } },
+      {
+        fps: 10,
+        qrbox: { width: 280, height: 100 },
+        aspectRatio: 1.5,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.DATA_MATRIX,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+        ],
+      },
+      (decodedText) => {
+        document.getElementById('item-code').value = decodedText;
+        document.getElementById('pill-text').textContent = decodedText;
         document.getElementById('scan-result-pill').classList.add('visible');
         onCodeInput();
         stopScan();
         document.getElementById('item-qty').focus();
         showToast('✅ Barcode scanned');
-      }
-    });
+      },
+      (err) => { /* scan errors are normal while searching, ignore */ }
+    );
   } catch(e) {
     stopScan();
-    showToast('⚠️ Camera unavailable — enter code manually');
+    if (e && e.message && e.message.includes('Permission')) {
+      showToast('⚠️ Camera permission denied — please allow in browser settings');
+    } else {
+      showToast('⚠️ Camera unavailable — enter code manually');
+    }
   }
 }
+
 function stopScan() {
-  if (codeReader) { try { codeReader.reset(); } catch(e){} codeReader = null; }
+  if (codeReader) {
+    try {
+      if (codeReader.isScanning) {
+        codeReader.stop().then(()=>{ try{codeReader.clear();}catch(e){} codeReader=null; }).catch(()=>{ codeReader=null; });
+      } else {
+        try{codeReader.clear();}catch(e){} codeReader=null;
+      }
+    } catch(e) { codeReader=null; }
+  }
   document.getElementById('video-container').classList.remove('active');
+  document.getElementById('close-scan').style.display = 'none';
   document.getElementById('scan-btn').disabled = false;
 }
 function clearCode() {
@@ -856,7 +865,8 @@ function renderList() {
   });
   document.getElementById('total-qty').textContent=tq;
   document.getElementById('total-lines').textContent=orders.length;
-  document.getElementById('session-badge').textContent=orders.length?`${orders.length} item${orders.length>1?'s':''}`:'New session';
+  const sb=document.getElementById('session-badge');
+  if(orders.length){sb.style.display='';sb.textContent=`${orders.length} item${orders.length>1?'s':''}`;} else {sb.style.display='none';}
 }
 
 // ── PRODUCTS ──
@@ -1080,7 +1090,7 @@ try {
   if (cached) { products = JSON.parse(cached); }
 } catch(e) {}
 renderList();
-fetchProductsFromSheet();
+fetchProductsFromSheet(true);
 </script>
 </body>
 </html>
