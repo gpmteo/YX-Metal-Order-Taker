@@ -109,7 +109,7 @@ main{flex:1;max-width:560px;width:100%;margin:0 auto;padding:14px 13px 100px;dis
 .order-header-left{display:flex;align-items:center;gap:9px;}
 .order-count{background:var(--teal);color:var(--white);font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;min-width:20px;text-align:center;}
 .order-count.empty{background:var(--border);color:var(--ink-soft);}
-.order-list{min-height:56px;}
+.order-list{min-height:56px;display:flex;flex-direction:column;}
 .order-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 20px;gap:8px;color:var(--ink-soft);}
 .order-empty-icon{font-size:26px;opacity:.4;}
 .order-empty-text{font-size:13px;text-align:center;line-height:1.5;}
@@ -181,17 +181,7 @@ main{flex:1;max-width:560px;width:100%;margin:0 auto;padding:14px 13px 100px;dis
 .prod-code{font-family:"SF Mono","Fira Code",monospace;font-size:11px;color:var(--ink-soft);margin-top:2px;}
 .prod-actions{display:flex;gap:4px;flex-shrink:0;}
 .prod-form-row{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
-.import-zone{border:2px dashed var(--border);border-radius:var(--r-md);padding:20px;text-align:center;cursor:pointer;transition:all .15s;background:var(--surface);}
-.import-zone:hover,.import-zone.drag{border-color:var(--teal);background:var(--teal-light);}
-.import-zone input{display:none;}
-.import-zone p{font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
-.import-zone .iz-icon{font-size:26px;}
-.import-preview{background:var(--teal-light);border-radius:var(--r-sm);padding:10px 13px;font-size:12px;color:var(--teal-dark);display:none;}
-.import-preview.visible{display:block;}
 .section-label{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.07em;padding:4px 0 2px;}
-.tip-box{background:var(--teal-light);border-radius:var(--r-md);padding:12px 15px;}
-.tip-box strong{font-size:13px;font-weight:700;color:var(--teal-dark);}
-.tip-box p{font-size:12px;color:var(--ink-mid);line-height:1.6;margin-top:3px;}
 
 /* TOAST */
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--white);padding:10px 18px;border-radius:30px;font-size:13px;font-weight:500;opacity:0;transition:all .3s;z-index:400;white-space:nowrap;pointer-events:none;box-shadow:var(--sh-lg);}
@@ -402,27 +392,6 @@ main{flex:1;max-width:560px;width:100%;margin:0 auto;padding:14px 13px 100px;dis
     </div>
   </div>
 
-  <!-- Import -->
-  <div class="card">
-    <div class="card-header">
-      <div class="card-icon">📥</div>
-      <div><h2>Import products</h2><p>Upload Excel (.xlsx) or CSV to bulk-load items</p></div>
-    </div>
-    <div class="card-body" style="display:flex;flex-direction:column;gap:10px;">
-      <div class="import-zone" id="import-zone" onclick="document.getElementById('csv-file').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
-        <input type="file" id="csv-file" accept=".xlsx,.xls,.csv,.txt" onchange="handleImportFile(this.files[0])">
-        <div class="iz-icon">📂</div>
-        <div style="font-size:14px;font-weight:600;color:var(--teal-dark);margin-top:6px;">Tap to choose file</div>
-        <p>Excel (.xlsx) or CSV accepted<br>Drag and drop also works<br>Columns: <code style="font-size:11px;background:var(--border);padding:1px 5px;border-radius:4px;">Item Code, Product Name, Category</code></p>
-      </div>
-      <div class="import-preview" id="import-preview"></div>
-      <button class="btn btn-primary btn-full" id="import-confirm-btn" onclick="confirmImport()" style="display:none;">✅ Import items</button>
-      <div class="tip-box">
-        <strong>💡 How to prepare your file</strong>
-        <p>First row = column headers. Columns can be in any order:<br><code style="font-size:11px;">Item Code &nbsp;|&nbsp; Product Name &nbsp;|&nbsp; Category</code><br>Export your current list to get a ready-made template.</p>
-      </div>
-    </div>
-  </div>
 
   <!-- Product list -->
   <div class="card">
@@ -576,19 +545,23 @@ const CONFIG = {
 };
 
 // ── CONSTANTS ──
-const PIN_KEY     = 'yx_admin_pin';
-const DEFAULT_PIN = '2026';
-const CACHE_KEY   = 'yx_products_cache';
+const PIN_KEY       = 'yx_admin_pin';
+const DEFAULT_PIN   = '2026';
+const CACHE_KEY     = 'yx_products_cache';
+const MAX_PIN_TRIES = 5;
+const LOCKOUT_MS    = 30000; // 30 seconds
 
 // ── STATE ──
-let products = [];
-let orders = [];
-let isAdmin = false;
-let codeReader = null;
-let pinBuffer = '';
+let products       = [];
+let orders         = [];
+let isAdmin        = false;
+let codeReader     = null;
+let pinBuffer      = '';
+let pinAttempts    = 0;
+let pinLockedUntil = 0;
 let deleteTargetIdx = -1;
-let importBuffer = [];
-let syncStatus = 'idle'; // idle | loading | ok | error
+let syncStatus     = 'idle';
+let scanActive     = false;
 
 // ── GOOGLE SHEETS SYNC ──
 async function fetchProductsFromSheet(silent) {
@@ -642,7 +615,13 @@ function setSyncStatus(status, msg) {
 }
 
 function saveProducts() {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(products)); } catch(e) {}
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(products));
+  } catch(e) {
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+      showToast('⚠️ Storage full — some data may not be saved');
+    }
+  }
 }
 function getPin() {
   return localStorage.getItem(PIN_KEY) || DEFAULT_PIN;
@@ -672,21 +651,44 @@ function lockAdmin() {
   switchTab('order', document.querySelector('.tab'));
 }
 function pinPress(d) {
+  const now = Date.now();
+  if (now < pinLockedUntil) {
+    const secs = Math.ceil((pinLockedUntil - now) / 1000);
+    document.getElementById('pin-error').textContent = `Too many attempts. Wait ${secs}s.`;
+    return;
+  }
   if (pinBuffer.length >= 4) return;
   pinBuffer += d;
   updatePinDots();
   if (pinBuffer.length === 4) {
     setTimeout(() => {
-      if (pinBuffer === getPin()) {
+      // Use length-safe comparison to avoid trivial timing leak
+      const stored = getPin();
+      const match  = pinBuffer.length === stored.length &&
+                     pinBuffer.split('').every((c, i) => c === stored[i]);
+      if (match) {
+        pinAttempts = 0;
         isAdmin = true;
         closeLock();
         document.getElementById('admin-toggle-btn').textContent = '🔓 Admin';
         document.getElementById('admin-toggle-btn').classList.add('unlocked');
         document.getElementById('tab-products').style.display = '';
       } else {
-        document.getElementById('pin-error').textContent = 'Incorrect PIN. Try again.';
+        pinAttempts++;
         pinBuffer = '';
         updatePinDots();
+        const errEl = document.getElementById('pin-error');
+        if (pinAttempts >= MAX_PIN_TRIES) {
+          pinLockedUntil = Date.now() + LOCKOUT_MS;
+          errEl.textContent = `Too many attempts. Locked for 30s.`;
+          // Auto-clear lockout message after it expires
+          setTimeout(() => {
+            pinAttempts = 0;
+            if (errEl) errEl.textContent = '';
+          }, LOCKOUT_MS);
+        } else {
+          errEl.textContent = `Incorrect PIN. ${MAX_PIN_TRIES - pinAttempts} attempt(s) left.`;
+        }
         const box = document.querySelector('.lock-box');
         box.style.animation = 'none';
         setTimeout(() => { box.style.animation = 'shake .35s ease'; }, 10);
@@ -782,7 +784,6 @@ async function startScan() {
   }
 }
 
-let scanActive = false;
 async function scanFrame() {
   if (!codeReader) return;
   const video = document.getElementById('preview');
@@ -807,10 +808,12 @@ async function scanFrame() {
       // Native BarcodeDetector — fast, hardware-accelerated on Android Chrome
       if (!scanActive) {
         scanActive = true;
-        const detector = new BarcodeDetector({
-          formats: ['code_128','code_39','code_93','ean_13','ean_8','upc_a','upc_e','qr_code','data_matrix','itf','codabar']
-        });
-        const barcodes = await detector.detect(canvas);
+        if (!window._barcodeDetector) {
+          window._barcodeDetector = new BarcodeDetector({
+            formats: ['code_128','code_39','code_93','ean_13','ean_8','upc_a','upc_e','qr_code','data_matrix','itf','codabar']
+          });
+        }
+        const barcodes = await window._barcodeDetector.detect(canvas);
         scanActive = false;
         if (barcodes.length > 0) {
           onBarcodeFound(barcodes[0].rawValue); return;
@@ -871,7 +874,7 @@ function stopScan() {
     codeReader = null;
   }
   const video = document.getElementById('preview');
-  video.srcObject = null;
+  try { video.srcObject = null; } catch(e) {}
   document.getElementById('video-container').classList.remove('active');
   document.getElementById('close-scan').style.display = 'none';
   document.getElementById('scan-btn').disabled = false;
@@ -885,12 +888,16 @@ function clearCode() {
 
 // ── ORDER ──
 function addItem() {
-  const code = document.getElementById('item-code').value.trim();
-  const qty  = parseInt(document.getElementById('item-qty').value)||1;
-  const note = document.getElementById('item-note').value.trim();
+  const code   = document.getElementById('item-code').value.trim();
+  const qtyRaw = document.getElementById('item-qty').value.trim();
+  const qty    = qtyRaw === '' ? 1 : parseInt(qtyRaw, 10);
+  const note   = document.getElementById('item-note').value.trim();
   if (!code) { showToast('⚠️ Enter or scan an item code'); document.getElementById('item-code').focus(); return; }
+  if (isNaN(qty) || qty < 1 || qty > 99999) { showToast('⚠️ Enter a valid quantity (1–99999)'); document.getElementById('item-qty').focus(); return; }
+  // Sanitise note length
+  const cleanNote = note.slice(0, 200);
   const match = lookupCode(code);
-  orders.push({code, name: match?match.name:'', qty, note});
+  orders.push({code: code.slice(0,100), name: match ? match.name : '', qty, note: cleanNote});
   renderList(); clearForm();
   showToast('✅ Item added');
   document.getElementById('item-code').focus();
@@ -902,31 +909,22 @@ function clearForm() {
 }
 function removeItem(idx) { orders.splice(idx,1); renderList(); showToast('Item removed'); }
 function renderList() {
-  const list   = document.getElementById('order-list');
-  const empty  = document.getElementById('order-empty');
   const footer = document.getElementById('order-footer');
   const cnt    = document.getElementById('order-count');
   const cb     = document.getElementById('clear-all-btn');
+  const empty  = document.getElementById('order-empty');
+  const sb     = document.getElementById('session-badge');
 
   cnt.textContent = orders.length;
   cnt.classList.toggle('empty', !orders.length);
-  cb.style.display = orders.length ? 'inline-flex' : 'none';
+  cb.style.display  = orders.length ? 'inline-flex' : 'none';
   footer.style.display = orders.length ? 'block' : 'none';
+  empty.style.display  = orders.length ? 'none' : 'flex';
+  sb.style.display     = orders.length ? '' : 'none';
+  if (orders.length) sb.textContent = `${orders.length} item${orders.length > 1 ? 's' : ''}`;
 
-  // Clear only order-item rows, leave empty placeholder detached
-  Array.from(list.querySelectorAll('.order-item')).forEach(el => el.remove());
-
-  if (!orders.length) {
-    if (!list.contains(empty)) list.appendChild(empty);
-    empty.style.display = 'flex';
-    document.getElementById('session-badge').style.display = 'none';
-    return;
-  }
-
-  // Hide empty placeholder
-  empty.style.display = 'none';
-  if (list.contains(empty)) list.removeChild(empty);
-
+  // Rebuild rows inside a fragment — fast and avoids any DOM thrash
+  const frag = document.createDocumentFragment();
   let tq = 0;
   orders.forEach((item, i) => {
     tq += item.qty;
@@ -940,14 +938,16 @@ function renderList() {
       </div>
       <div class="item-qty">${item.qty} pcs</div>
       <button class="btn btn-danger" onclick="removeItem(${i})" style="padding:4px 6px;">✕</button>`;
-    list.appendChild(el);
+    frag.appendChild(el);
   });
 
-  document.getElementById('total-qty').textContent = tq;
+  // Remove old rows only, keep the empty placeholder div in place
+  const list = document.getElementById('order-list');
+  Array.from(list.children).forEach(c => { if (c.classList.contains('order-item')) c.remove(); });
+  list.appendChild(frag);
+
+  document.getElementById('total-qty').textContent  = tq;
   document.getElementById('total-lines').textContent = orders.length;
-  const sb = document.getElementById('session-badge');
-  sb.style.display = '';
-  sb.textContent = `${orders.length} item${orders.length > 1 ? 's' : ''}`;
 }
 
 // ── PRODUCTS ──
@@ -1044,77 +1044,6 @@ function exportProductsCSV() {
 }
 
 // ── CSV IMPORT ──
-function dragOver(e){e.preventDefault();document.getElementById('import-zone').classList.add('drag');}
-function dragLeave(){document.getElementById('import-zone').classList.remove('drag');}
-function dropFile(e){e.preventDefault();dragLeave();const f=e.dataTransfer.files[0];if(f)handleCSVFile(f);}
-function handleCSVFile(file) {
-  if (!file) return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const text=e.target.result;
-    const result=parseCSV(text);
-    importBuffer=result.rows;
-    const prev=document.getElementById('import-preview');
-    if (result.errors.length && !result.rows.length) {
-      prev.className='import-preview visible';
-      prev.style.background='var(--danger-bg)';prev.style.color='var(--danger)';
-      prev.textContent='⚠️ '+result.errors.join(' ');
-      document.getElementById('import-confirm-btn').style.display='none';
-    } else {
-      prev.className='import-preview visible';
-      prev.style.background='var(--teal-light)';prev.style.color='var(--teal-dark)';
-      let msg=`✅ Found ${result.rows.length} item(s) ready to import.`;
-      if (result.errors.length) msg+=` ⚠️ ${result.errors.length} row(s) skipped (missing data).`;
-      prev.textContent=msg;
-      document.getElementById('import-confirm-btn').style.display=result.rows.length?'':'none';
-    }
-  };
-  reader.readAsText(file);
-}
-function parseCSV(text) {
-  const lines=text.split(/\r?\n/).filter(l=>l.trim());
-  if (!lines.length) return {rows:[],errors:['Empty file.']};
-  const header=lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim().toLowerCase());
-  const ci=header.findIndex(h=>h.includes('item code')||h==='code');
-  const ni=header.findIndex(h=>h.includes('product name')||h==='name');
-  const cati=header.findIndex(h=>h.includes('category'));
-  if (ci<0||ni<0) return {rows:[],errors:['Header must include "Item Code" and "Product Name" columns.']};
-  const rows=[]; const errors=[];
-  for (let i=1;i<lines.length;i++){
-    const cols=splitCSVLine(lines[i]);
-    const code=(cols[ci]||'').trim();
-    const name=(cols[ni]||'').trim();
-    const cat=cati>=0?(cols[cati]||'').trim():'';
-    if (!code||!name){if(lines[i].trim())errors.push(`Row ${i+1} skipped`);continue;}
-    rows.push({code,name,category:cat});
-  }
-  return {rows,errors};
-}
-function splitCSVLine(line) {
-  const result=[]; let cur=''; let inQ=false;
-  for (let i=0;i<line.length;i++){
-    if (line[i]==='"'){inQ=!inQ;}
-    else if (line[i]===','&&!inQ){result.push(cur);cur='';}
-    else{cur+=line[i];}
-  }
-  result.push(cur);
-  return result;
-}
-function confirmImport() {
-  if (!importBuffer.length) return;
-  let added=0, skipped=0;
-  importBuffer.forEach(p=>{
-    if (products.find(e=>e.code.toLowerCase()===p.code.toLowerCase())){skipped++;return;}
-    products.push(p); added++;
-  });
-  saveProducts(); renderProducts();
-  document.getElementById('import-preview').textContent=`✅ Imported ${added} item(s).${skipped?' '+skipped+' duplicate(s) skipped.':''}`;
-  document.getElementById('import-confirm-btn').style.display='none';
-  document.getElementById('csv-file').value='';
-  importBuffer=[];
-  showToast(`✅ ${added} items imported`);
-}
-
 // ── EXPORT ORDER ──
 function openExport(){if(!orders.length){showToast('No items');return;}document.getElementById('export-modal').classList.add('open');}
 function closeExport(){document.getElementById('export-modal').classList.remove('open');}
@@ -1183,7 +1112,7 @@ function exportText(){
   navigator.clipboard.writeText(t).catch(()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);});
   closeExport(); showToast('📋 Copied to clipboard');
 }
-function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();}
+function dl(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}
 
 // ── CLEAR ORDER ──
 function confirmClearAll(){document.getElementById('confirm-modal').classList.add('open');}
@@ -1202,6 +1131,19 @@ function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 document.getElementById('item-qty').addEventListener('keydown',e=>{if(e.key==='Enter')addItem();});
 document.getElementById('item-code').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('item-qty').focus();});
 document.addEventListener('keydown',e=>{if(document.getElementById('lock-screen').classList.contains('open')){if(e.key>='0'&&e.key<='9')pinPress(e.key);else if(e.key==='Backspace')pinDelete();else if(e.key==='Escape')closeLock();}});
+
+// ── VISIBILITY: stop camera when app goes to background ──
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && codeReader) stopScan();
+});
+
+// ── WARN before closing with unsaved order ──
+window.addEventListener('beforeunload', e => {
+  if (orders.length > 0) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 // Load from cache first (instant), then fetch fresh from Google Sheets
 try {
